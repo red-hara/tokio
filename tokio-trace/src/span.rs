@@ -147,6 +147,11 @@ use {
     field, Metadata,
 };
 
+/// Trait implemented by types which have a span `Id`.
+pub trait AsId: ::sealed::Sealed {
+    fn as_id(&self) -> Option<&Id>;
+}
+
 /// A handle representing a span, with the capability to enter the span if it
 /// exists.
 ///
@@ -253,10 +258,10 @@ impl<'a> Span<'a> {
     /// [`follows_from`]: ::span::Span::follows_from
     pub fn child_of<I>(parent: I, meta: &'a Metadata<'a>, values: &field::ValueSet) -> Span<'a>
     where
-        I: Into<Option<Id>>
+        I: AsId,
     {
-        let new_span = match parent.into() {
-            Some(parent) => NewSpan::child_of(parent, meta, values),
+        let new_span = match parent.as_id() {
+            Some(parent) => NewSpan::child_of(parent.clone(), meta, values),
             None => NewSpan::new_root(meta, values),
         };
         Self::make(meta, new_span)
@@ -391,9 +396,14 @@ impl<'a> Span<'a> {
     ///
     /// If this span is disabled, or the resulting follows-from relationship
     /// would be invalid, this function will do nothing.
-    pub fn follows_from(&self, from: &Id) -> &Self {
+    pub fn follows_from<I>(&self, from: I) -> &Self
+    where
+        I: AsId,
+    {
         if let Some(ref inner) = self.inner {
-            inner.follows_from(from);
+            if let Some(from) = from.as_id() {
+                inner.follows_from(from);
+            }
         }
         self
     }
@@ -421,12 +431,20 @@ impl<'a> fmt::Debug for Span<'a> {
     }
 }
 
-impl<'a> Into<Option<Id>> for &'a Span<'a> {
-    fn into(self) -> Option<Id> {
-        self.id()
+impl<'a> ::sealed::Sealed for Span<'a> {}
+impl<'a> ::sealed::Sealed for &'a Span<'a> {}
+
+impl<'a> AsId for Span<'a> {
+    fn as_id(&self) -> Option<&Id> {
+        self.inner.as_ref().map(|inner| &inner.id)
     }
 }
 
+impl<'a> AsId for &'a Span<'a> {
+    fn as_id(&self) -> Option<&Id> {
+        self.inner.as_ref().map(|inner| &inner.id)
+    }
+}
 // ===== impl Inner =====
 
 impl<'a> Inner<'a> {
@@ -538,5 +556,39 @@ impl<'a> Entered<'a> {
         } else {
             Some(self.inner)
         }
+    }
+}
+
+// ===== impl AsId =====
+
+impl ::sealed::Sealed for Id {}
+
+impl AsId for Id {
+    fn as_id(&self) -> Option<&Id> {
+        Some(self)
+    }
+}
+
+impl ::sealed::Sealed for Option<Id> {}
+
+impl AsId for Option<Id> {
+    fn as_id(&self) -> Option<&Id> {
+        self.as_ref()
+    }
+}
+
+impl<'a> ::sealed::Sealed for &'a Id {}
+
+impl<'a> AsId for &'a Id {
+    fn as_id(&self) -> Option<&Id> {
+        Some(self)
+    }
+}
+
+impl<'a> ::sealed::Sealed for &'a Option<Id> {}
+
+impl<'a> AsId for &'a Option<Id> {
+    fn as_id(&self) -> Option<&Id> {
+        self.as_ref()
     }
 }
